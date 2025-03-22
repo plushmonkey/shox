@@ -8,27 +8,25 @@
 namespace shox {
 
 static uint16_t GetShipRadius(const ShipGenerator& gen, int ship, int level) {
-  const auto& settings = gen.settings;
-
-  uint16_t radius = settings.ShipSettings[ship].Radius;
-
   if (level <= 0) level = 1;
 
-  // 14 is the default ship radius when nothing is specified.
-  if (radius == 0) radius = 14;
+  const auto& settings = gen.settings;
+
+  s32 radius = 0;
 
   switch (gen.type) {
     case GenerateType::Mine:
     case GenerateType::Bomb: {
       constexpr s16 kBombRadius = 7;
 
-      radius = (settings.ProximityDistance + (level - 1)) * 16 - kBombRadius;
+      if (settings.ProximityDistance > 0) {
+        radius = (settings.ProximityDistance + (level - 1)) * 16 - kBombRadius;
+      }
     } break;
     case GenerateType::Ball: {
       // Shrink by the ball radius so the bounding box will be created for edge-overlap test.
       constexpr s16 kBallRadius = 7;
 
-      // Overwrite the radius since the ship's radius is not included in soccer ball proximity.
       if (settings.ShipSettings[ship].SoccerBallProximity > kBallRadius) {
         radius = settings.ShipSettings[ship].SoccerBallProximity - kBallRadius;
       }
@@ -37,14 +35,28 @@ static uint16_t GetShipRadius(const ShipGenerator& gen, int ship, int level) {
     } break;
   }
 
-  return radius;
+  return (uint16_t)radius;
 }
 
 bool ShipGenerator::Generate(int ship) {
-  if (ship < 0 || ship > 7) return false;
+  if (ship < 0 || ship > 7) {
+    error_message = "Invalid ship (" + std::to_string(ship) + ").";
+    return false;
+  }
 
   int original_item_dim = src_bitmap.width / 10;
   u16 new_ship_radius = GetShipRadius(*this, ship, 4) + 2;
+  if (new_ship_radius == 2) {
+    int proximity_distance = settings.ProximityDistance;
+
+    if (type == GenerateType::Ball) {
+      proximity_distance = settings.ShipSettings[ship].SoccerBallProximity;
+    }
+
+    error_message = "Incompatible proximity distance (" + std::to_string(proximity_distance) + ")";
+
+    return false;
+  }
 
   // Make radius even
   if (new_ship_radius & 1) ++new_ship_radius;
@@ -133,6 +145,10 @@ bool ShipGenerator::Generate(int ship) {
         };
         u32 color = colors[level - 1];
 
+        if (!use_colors) {
+          color = RGBA(255, 255, 255, 255);
+        }
+
         uint16_t radius = GetShipRadius(*this, ship, level);
 
         if (radius > 0) {
@@ -163,33 +179,42 @@ bool ShipGenerator::Generate(int ship) {
       sprintf(output_filename + output_filename_offset, "mines.png");
     } break;
     default: {
+      error_message = "Invalid generator type.";
       return false;
     } break;
   }
 
-  stbi_write_png(output_filename, total_width, total_height, 4, write_data, total_width * 4);
+  bool result = true;
+
+  if (!stbi_write_png(output_filename, total_width, total_height, 4, write_data, total_width * 4)) {
+    error_message = "Failed to write output file.";
+    result = false;
+  }
 
   free(write_data);
 
-  return true;
+  return result;
 }
 
 bool ShipGenerator::Generate() {
+  error_message.clear();
+
   switch (type) {
     case GenerateType::Ball: {
       for (int i = 0; i < 8; ++i) {
         if (!Generate(i)) {
-          shox::DisplayError("Failed to generate ship.");
           return false;
         }
       }
     } break;
     case GenerateType::Mine:
     case GenerateType::Bomb: {
-      Generate(0);
+      if (!Generate(0)) {
+        return false;
+      }
     } break;
     default: {
-      shox::DisplayError("Illegal generate type.");
+      error_message = "Illegal generate type.";
       return false;
     } break;
   }

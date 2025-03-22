@@ -25,6 +25,8 @@ struct ShipGenerator {
   std::string working_directory;
 
   GenerateType type = GenerateType::Ball;
+  bool use_colors = true;
+  std::string error_message;
 
   ShipGenerator(Bitmap src_bitmap, const ArenaSettings& settings, GenerateType type)
       : src_bitmap(src_bitmap), settings(settings), type(type) {}

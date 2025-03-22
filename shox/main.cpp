@@ -12,11 +12,13 @@
 //
 #include <Windows.h>
 //
+#include <Uxtheme.h>
 #include <commctrl.h>
 //
 #include "resource.h"
 
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "UxTheme.lib")
 
 // This is necessary to get visual styles.
 #pragma comment(linker, \
@@ -28,6 +30,7 @@ processorArchitecture='*' publicKeyToken='6595b64144ccf1df' language='*'\"")
 #define ID_TYPESELECTOR 102
 #define ID_EXPLAINLABEL 103
 #define ID_STATUSLABEL 104
+#define ID_COLORCHECKBOX 105
 
 #define WM_GENERATE_COMPLETE WM_USER + 0x123
 
@@ -40,6 +43,7 @@ struct ShoxApp {
   HWND type_selector_hwnd = nullptr;
   HWND explain_label_hwnd = nullptr;
   HWND status_label_hwnd = nullptr;
+  HWND color_option_hwnd = nullptr;
 
   std::thread generate_thread;
 
@@ -73,7 +77,7 @@ struct ShoxApp {
     }
 
     auto opt_settings = process.Get<shox::ArenaSettings>(*opt_game_addr + 0x127ec + 0x1AE70);
-    if (!opt_settings) {
+    if (!opt_settings || opt_settings->Type != 0x0F) {
       SetStatus("Failed to read arena settings.");
       return false;
     }
@@ -115,6 +119,8 @@ struct ShoxApp {
 
     generator = std::make_unique<shox::ShipGenerator>(src_bitmap, settings, generate_type);
     generator->working_directory = working_directory;
+
+    generator->use_colors = (bool)SendMessage(this->color_option_hwnd, BM_GETCHECK, 0, 0);
 
     generate_thread = std::thread(&ShoxApp::RunGeneration, this);
     SetStatus("Generating...");
@@ -160,23 +166,31 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
                                                 (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL);
 
       shox->type_selector_hwnd =
-          CreateWindowEx(0, WC_COMBOBOX, "", WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST, 5, surface_height - 30, 120, 20,
+          CreateWindowEx(0, WC_COMBOBOX, "", WS_VISIBLE | WS_CHILD | CBS_DROPDOWNLIST, 5, surface_height - 30, 80, 20,
                          hwnd, (HMENU)ID_TYPESELECTOR, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL);
 
       shox->button_hwnd =
-          CreateWindowEx(0, WC_BUTTON, "Create", WS_VISIBLE | WS_CHILD, 130, surface_height - 25, 120, 20, hwnd,
+          CreateWindowEx(0, WC_BUTTON, "Create", WS_VISIBLE | WS_CHILD, 130, surface_height - 25, 80, 20, hwnd,
                          (HMENU)ID_CREATEBUTTON, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL);
 
       shox->status_label_hwnd =
           CreateWindowEx(0, WC_STATIC, "", WS_CHILD, 10, surface_height / 2 + 20, surface_width - 20, 20, hwnd,
                          (HMENU)ID_STATUSLABEL, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL);
 
+      shox->color_option_hwnd = CreateWindowEx(
+          WS_EX_TRANSPARENT, WC_BUTTON, "Colored", WS_VISIBLE | WS_CHILD | BS_AUTOCHECKBOX, 100, surface_height - 28,
+          100, 20, hwnd, (HMENU)ID_COLORCHECKBOX, (HINSTANCE)GetWindowLongPtr(hwnd, GWLP_HINSTANCE), NULL);
+
+      // Set the theme to something invalid so it can be colored.
+      SetWindowTheme(shox->color_option_hwnd, L"", L"");
+      SendMessage(shox->color_option_hwnd, BM_SETCHECK, (WPARAM)BST_CHECKED, 0);
+
       RECT create_rect = {};
 
       if (GetClientRect(shox->button_hwnd, &create_rect)) {
         s32 width = create_rect.right - create_rect.left;
         s32 height = create_rect.bottom - create_rect.top;
-        MoveWindow(shox->button_hwnd, surface_width - width - 5, surface_height - 25, width, height, TRUE);
+        MoveWindow(shox->button_hwnd, surface_width - width - 8, surface_height - 28, width, height, TRUE);
       }
 
       const char* kSelections[] = {"Bombs", "Mines", "Ball"};
@@ -187,12 +201,25 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
       SendMessage(shox->type_selector_hwnd, CB_SETCURSEL, (WPARAM)0, (LPARAM)0);
     } break;
     case WM_CTLCOLORSTATIC: {
+      static HBRUSH brush = CreateSolidBrush(STATIC_BACKGROUND_COLOR);
+
       HDC hdc = (HDC)wParam;
+      HWND static_hwnd = (HWND)lParam;
 
       SetTextColor(hdc, RGB(255, 255, 255));
       SetBkMode(hdc, TRANSPARENT);
 
-      return (INT_PTR)CreateSolidBrush(STATIC_BACKGROUND_COLOR);
+      if (static_hwnd == shox->color_option_hwnd) {
+        static HBRUSH dark_brush = CreateSolidBrush(WINDOW_BACKGROUND_COLOR);
+
+        return (INT_PTR)dark_brush;
+      }
+
+      return (INT_PTR)brush;
+    } break;
+    case WM_SETFOCUS: {
+      InvalidateRect(shox->color_option_hwnd, NULL, FALSE);
+      UpdateWindow(shox->color_option_hwnd);
     } break;
     case WM_COMMAND: {
       u32 id = LOWORD(wParam);
@@ -210,7 +237,11 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
           }
         } break;
         case ID_TYPESELECTOR: {
-          //
+          ShowWindow(shox->status_label_hwnd, 0);
+
+          int index = (int)SendMessage(shox->type_selector_hwnd, CB_GETCURSEL, 0, 0);
+
+          ShowWindow(shox->color_option_hwnd, index != (int)shox::GenerateType::Ball);
         } break;
         default: {
         } break;
@@ -222,7 +253,12 @@ static LRESULT CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lPara
       shox->generate_thread.join();
       shox->generate_thread = std::thread();
 
-      shox->SetStatus("Generation complete.");
+      if (success) {
+        shox->SetStatus("Generation complete.");
+      } else {
+        shox->SetStatus("Error: " + shox->generator->error_message);
+      }
+
       EnableWindow(shox->button_hwnd, TRUE);
     } break;
     case WM_CLOSE: {
@@ -278,7 +314,7 @@ int CALLBACK WinMain(_In_ HINSTANCE hInstance, _In_opt_ HINSTANCE hPrevInstance,
     shox->working_directory = *opt_working_directory;
   }
 
-  DWORD style = WS_OVERLAPPEDWINDOW & ~WS_THICKFRAME;
+  DWORD style = WS_OVERLAPPEDWINDOW & ~(WS_THICKFRAME | WS_MAXIMIZEBOX);
   shox->hwnd = CreateWindowEx(0, kClassName, "shox", style, CW_USEDEFAULT, CW_USEDEFAULT, width, height, NULL, NULL,
                               hInstance, shox);
   if (!shox->hwnd) {
