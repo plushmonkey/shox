@@ -3,6 +3,8 @@
 #include <Windows.h>
 #include <commdlg.h>
 #include <tlhelp32.h>
+//
+#include <Psapi.h>
 
 #include <vector>
 
@@ -80,7 +82,8 @@ static FindProcessResult FindProcesses(const char* find) {
   return result;
 }
 
-std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* filter) {
+std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* dialog_title, const wchar_t* filter,
+                                                const wchar_t* initial_dir) {
   OPENFILENAMEW ofn = {};
   std::wstring filename;
 
@@ -92,6 +95,8 @@ std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* filter) {
   ofn.nMaxFile = (DWORD)filename.size();
   ofn.nFilterIndex = 0;
   ofn.Flags = OFN_PATHMUSTEXIST | OFN_FILEMUSTEXIST;
+  ofn.lpstrTitle = dialog_title;
+  ofn.lpstrInitialDir = initial_dir;
 
   if (!GetOpenFileNameW(&ofn)) {
     return {};
@@ -141,6 +146,21 @@ std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* filter) {
   return result;
 }
 
+std::optional<std::string> GetWorkingDirectory() {
+  std::string directory;
+
+  DWORD size = GetCurrentDirectoryA(0, nullptr);
+  if (size == 0) {
+    return {};
+  }
+
+  directory.resize(size);
+
+  GetCurrentDirectoryA(size, directory.data());
+
+  return directory;
+}
+
 std::optional<ExeProcess> ExeProcess::OpenByName(const char* name) {
   if (!GetDebugPrivileges()) {
     DisplayError("Failed to get OpenProcess privileges. Run as administrator.");
@@ -168,7 +188,7 @@ std::optional<ExeProcess> ExeProcess::OpenByName(const char* name) {
 
   ExeProcess process;
 
-  process.win32_handle = OpenProcess(PROCESS_VM_READ, FALSE, result.pids[0]);
+  process.win32_handle = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, result.pids[0]);
 
   if (!process.win32_handle) {
     DisplayError("Failed to OpenProcess with PROCESS_VM_READ.");
@@ -213,6 +233,28 @@ std::optional<std::string> ExeProcess::GetString(uintptr_t address) const {
   }
 
   return value;
+}
+
+std::optional<std::wstring> ExeProcess::GetDirectory() const {
+  constexpr size_t kMaxPathSize = 2048;
+  std::wstring path;
+
+  path.resize(kMaxPathSize);
+
+  size_t path_len = GetModuleFileNameExW(win32_handle, NULL, &path[0], kMaxPathSize);
+
+  if (path_len == 0) {
+    return {};
+  }
+
+  for (s32 i = (s32)path.size() - 1; i >= 0; --i) {
+    if (path[i] == '\\' || path[i] == '/') {
+      path_len = i + 1;
+      break;
+    }
+  }
+
+  return path.substr(0, path_len);
 }
 
 }  // namespace shox

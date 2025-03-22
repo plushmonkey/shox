@@ -26,6 +26,8 @@ struct ExeProcess {
     return result;
   }
 
+  std::optional<std::wstring> GetDirectory() const;
+
  private:
   ExeProcess() {}
   void* win32_handle = (void*)~0;
@@ -37,6 +39,9 @@ struct ReadFileResult {
   std::wstring filename;
   std::string contents;
 };
-std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* filter);
+std::optional<ReadFileResult> SelectAndReadFile(const wchar_t* dialog_title, const wchar_t* filter,
+                                                const wchar_t* initial_dir);
+
+std::optional<std::string> GetWorkingDirectory();
 
 }  // namespace shox

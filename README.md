@@ -1,19 +1,20 @@
 # shox
-Generates ship image files for Continuum that have either ball or bomb proximity boxes.  
+Generates image files for Continuum that have either ball, bomb, or mine proximity boxes.  
 
 ## Running
 1. Open Continuum.
 2. Join the zone and arena with the settings that you want to generate for.
-3. Run `shox.exe` or `shox.exe --bomb` to generate the ship files. This will dump ship1-ship8.png into the working directory.
+3. Run `shox.exe` and select the base ship files to generate ship files with ball radius.  
+Run `shox.exe --bombs` or `shox.exe --mines` to generate a new `bombs` or `mines` image with the radius built in.
 4. Put the files into the appropriate zone folder.
 
-Running this requires admin permissions because it needs to read Continuum memory for the ball / bomb prox settings.
+Running this requires admin permissions because it needs to read Continuum memory for the prox settings.
 
 ## Building
 Use MSVC to open the solution file and build in x64 release mode.  
 If any non-standard build setup is used, a manifest file should be used to create the UAC access level popup.  
 
 ### Further development
-This could be developed further with support for loading the ship graphics directly from Continuum memory. This would make it easy to modify ships that came from LVZ.  
+This could be developed further with support for loading the graphics directly from Continuum memory. This would make it easy to modify images that came from LVZ.  
 
-Also, it would be easy to find Continuum's working directory and automatically dump the graphics files to the zone folder.
+It would also be nice to have a window for making selections instead of command line.
