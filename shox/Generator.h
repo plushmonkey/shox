@@ -1,5 +1,6 @@
 #pragma once
 
+#include <shox/ArenaSettings.h>
 #include <shox/Draw.h>
 #include <shox/Types.h>
 
@@ -13,10 +14,12 @@ enum class GenerateType {
   Bomb,
   Mine,
   Ball,
+
+  Count
 };
 
 struct ShipGenerator {
-  const ArenaSettings& settings;
+  ArenaSettings settings;
   Bitmap src_bitmap;
 
   std::string working_directory;
@@ -27,6 +30,8 @@ struct ShipGenerator {
       : src_bitmap(src_bitmap), settings(settings), type(type) {}
 
   bool Generate();
+
+ private:
   bool Generate(int ship);
 };
 
